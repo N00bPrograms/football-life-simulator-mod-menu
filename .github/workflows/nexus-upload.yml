@@ -1,0 +1,66 @@
+# Uploads a GitHub release's mod zip to Nexus Mods as a new version of the main file.
+# Runs when a release is published, or by hand (Actions tab -> Run workflow) for any tag.
+#
+# Setup (once):
+#   secret   NEXUSMODS_API_KEY  - your personal API key from https://www.nexusmods.com/settings/api-keys
+#   variable NEXUS_MOD_ID       - 13  (nexusmods.com/footballlifesimulator/mods/13)
+#   variable NEXUS_FILE_ID      - 19  (the "FLSModMenu" main file)
+#
+# The release must have a FLSModMenu-<version>.zip asset attached (build it locally; the
+# mod can't be compiled in CI because it references the game's own DLLs).
+name: Upload to Nexus Mods
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to upload (e.g. v1.0.1)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nexus-upload
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+    steps:
+      - name: Download release zip and notes
+        id: rel
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern 'FLSModMenu-*.zip'
+          zip=$(ls FLSModMenu-*.zip | head -n1)
+          echo "zip=$zip" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#v}" >> "$GITHUB_OUTPUT"
+          gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json body --jq .body > notes.md
+          {
+            echo 'notes<<NOTES_EOF'
+            cat notes.md
+            echo
+            echo 'NOTES_EOF'
+          } >> "$GITHUB_OUTPUT"
+          echo "Uploading $zip as version ${TAG#v}"
+
+      - name: Upload to Nexus Mods
+        uses: Nexus-Mods/upload-action@98532f7670c27cbecc78fae03fa3e278147827e2 # v1.0.0-beta.11
+        with:
+          api_key: ${{ secrets.NEXUSMODS_API_KEY }}
+          mod_id: ${{ vars.NEXUS_MOD_ID }}
+          file_id: ${{ vars.NEXUS_FILE_ID }}
+          filename: ${{ steps.rel.outputs.zip }}
+          version: ${{ steps.rel.outputs.version }}
+          display_name: FLS Mod Menu
+          description: Extract into the game folder. Requires MelonLoader 0.7.3.
+          changelog: ${{ steps.rel.outputs.notes }}
+          update_mod_version: true
+          archive_existing_version: true

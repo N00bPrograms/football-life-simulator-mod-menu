@@ -40,6 +40,16 @@ The hotkey can be changed in `UserData\MelonPreferences.cfg` under `[FLSModMenu]
 - **UI:** IMGUI with manual layout using only `GUI.Box/Label/Button/Toggle/TextField`.
   This game's build has `GUILayout` and `GUI.HorizontalSlider` stripped, so they can't be used.
 
+## Releasing
+
+1. Bump the version in `Mod.cs` (`MelonInfo`) and build the release DLL (see below).
+2. Zip it as `FLSModMenu-<version>.zip` with the DLL at `Mods/FLSModMenu.dll`.
+3. Publish a GitHub release (tag `v<version>`) with the zip attached. The release notes become the Nexus changelog.
+
+Publishing the release runs [`.github/workflows/nexus-upload.yml`](.github/workflows/nexus-upload.yml),
+which uploads the zip to [the Nexus page](https://www.nexusmods.com/footballlifesimulator/mods/13)
+as a new version of the main file and archives the previous one.
+
 ## Build
 
 Requires the .NET SDK (6 or newer) and the game with MelonLoader installed (for reference DLLs).
