@@ -3,8 +3,10 @@
 #
 # Setup (once):
 #   secret   NEXUSMODS_API_KEY  - your personal API key from https://www.nexusmods.com/settings/api-keys
-#   variable NEXUS_MOD_ID       - 13  (nexusmods.com/footballlifesimulator/mods/13)
-#   variable NEXUS_FILE_ID      - 19  (the "FLSModMenu" main file)
+#   variable NEXUS_MOD_ID       - 13  (the number in nexusmods.com/footballlifesimulator/mods/13)
+#   variable NEXUS_FILE_ID      - 19  (the site's number for any version of the main file)
+# Those are the game-scoped IDs shown on the website. The v3 upload API needs the global IDs,
+# so the "Resolve Nexus IDs" step looks them up at run time.
 #
 # The release must have a FLSModMenu-<version>.zip asset attached (build it locally; the
 # mod can't be compiled in CI because it references the game's own DLLs).
@@ -51,12 +53,32 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Uploading $zip as version ${TAG#v}"
 
+      - name: Resolve Nexus IDs
+        id: ids
+        env:
+          NEXUS_KEY: ${{ secrets.NEXUSMODS_API_KEY }}
+          GAME: footballlifesimulator
+          MOD_SCOPED: ${{ vars.NEXUS_MOD_ID }}
+          FILE_SCOPED: ${{ vars.NEXUS_FILE_ID }}
+        run: |
+          set -euo pipefail
+          api=https://api.nexusmods.com/v3
+          get() { curl -fsS -H "apikey: $NEXUS_KEY" -H "Accept: application/json" -H "User-Agent: fls-mod-menu-ci" "$api$1"; }
+          mod_id=$(get "/games/$GAME/mods/$MOD_SCOPED" | jq -r '.data.id // empty')
+          file_id=$(get "/games/$GAME/mod-file-versions/$FILE_SCOPED" | jq -r '.data.file.id // empty')
+          if [ -z "$mod_id" ] || [ -z "$file_id" ]; then
+            echo "::error::Could not resolve Nexus IDs (mod '$mod_id', file '$file_id')"; exit 1
+          fi
+          echo "Mod $MOD_SCOPED -> $mod_id, file version $FILE_SCOPED -> file $file_id"
+          echo "mod_id=$mod_id" >> "$GITHUB_OUTPUT"
+          echo "file_id=$file_id" >> "$GITHUB_OUTPUT"
+
       - name: Upload to Nexus Mods
         uses: Nexus-Mods/upload-action@98532f7670c27cbecc78fae03fa3e278147827e2 # v1.0.0-beta.11
         with:
           api_key: ${{ secrets.NEXUSMODS_API_KEY }}
-          mod_id: ${{ vars.NEXUS_MOD_ID }}
-          file_id: ${{ vars.NEXUS_FILE_ID }}
+          mod_id: ${{ steps.ids.outputs.mod_id }}
+          file_id: ${{ steps.ids.outputs.file_id }}
           filename: ${{ steps.rel.outputs.zip }}
           version: ${{ steps.rel.outputs.version }}
           display_name: FLS Mod Menu
